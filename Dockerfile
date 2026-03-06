@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y curl gnupg unixodbc-dev \
     && echo 'export PATH="$PATH:/opt/mssql-tools18/bin"' >> ~/.bashrc
 
 # Python deps (pyodbc for MSSQL connectivity)
-RUN pip install --no-cache-dir crewai langchain langchain-community pyodbc streamlit pandas matplotlib plotly
+RUN pip install --no-cache-dir crewai langchain langchain-community langchain-ollama pyodbc streamlit pandas matplotlib plotly
 
 COPY multi_agent_db.py app.py ./
 
