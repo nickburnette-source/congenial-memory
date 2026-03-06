@@ -2,14 +2,16 @@ FROM nvcr.io/nvidia/pytorch:24.01-py3
 
 WORKDIR /app
 
-# Install ODBC drivers for MSSQL
-RUN apt-get update && apt-get install -y gnupg2 curl unixodbc-dev \
-    && curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
-    && curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list \
+# Install ODBC drivers for MSSQL (updated for Ubuntu 22.04 per Microsoft docs)
+RUN apt-get update && apt-get install -y curl gnupg unixodbc-dev \
+    && curl -sSL -O https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb \
+    && dpkg -i packages-microsoft-prod.deb \
+    && rm packages-microsoft-prod.deb \
     && apt-get update \
-    && ACCEPT_EULA=Y apt-get install -y msodbcsql17 mssql-tools18
+    && ACCEPT_EULA=Y apt-get install -y msodbcsql18 mssql-tools18 \
+    && echo 'export PATH="$PATH:/opt/mssql-tools18/bin"' >> ~/.bashrc
 
-# Python deps (replace mysql-connector with pyodbc)
+# Python deps (pyodbc for MSSQL connectivity)
 RUN pip install --no-cache-dir crewai langchain langchain-community pyodbc streamlit pandas matplotlib plotly
 
 COPY multi_agent_db.py app.py ./
