@@ -20,7 +20,7 @@ services:
     container_name: mssql
     environment:
       ACCEPT_EULA: Y
-      SA_PASSWORD: YourStrongSaPass123  # Change this!
+      SA_PASSWORD: ${MSSQL_PASSWORD}  # Change this!
       MSSQL_PID: Developer
     ports:
       - "1433:1433"
@@ -40,7 +40,7 @@ services:
       - OLLAMA_HOST=http://ollama:11434
       - MSSQL_HOST=mssql
       - MSSQL_USER=readonly_user  # Create this user post-restore if needed
-      - MSSQL_PASSWORD=YourReadonlyPass123
+      - MSSQL_PASSWORD=${MSSQL_PASSWORD}
       - MSSQL_DB=your_db
     ports:
       - "8501:8501"

@@ -24,3 +24,4 @@ docker compose up -d --build
 
 echo "Setup complete! Access UI at http://$(hostname -I | awk '{print $1}'):8501"
 echo "MSSQL ready at port 1433 (use readonly_user for queries)."
+echo "IMPORTANT: Create .env file for docker compose!"
