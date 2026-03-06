@@ -17,42 +17,43 @@ services:
 
   mssql:
     image: mcr.microsoft.com/azure-sql-edge:1.0.7
-    platform: linux/arm64/v8  # Native ARM64 for performance
+    platform: linux/arm64/v8  # Native ARM64
     container_name: mssql
     environment:
-      ACCEPT_EULA: 1  # Required for Azure SQL Edge
-      MSSQL_SA_PASSWORD: ${MSSQL_PASSWORD}  # Change this!
+      ACCEPT_EULA: 1
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
       MSSQL_PID: Developer
     ports:
       - "1433:1433"
     volumes:
       - mssql_data:/var/opt/mssql
-      - ./backups:/backups:ro  # Mount your .bak here (read-only)
+      - ./backups:/backups:ro
 
-  init-db:  # One-time restore service (emulated AMD64)
+  init-db:  # One-time restore (emulated AMD64)
     image: mcr.microsoft.com/mssql-tools:latest
-    platform: linux/amd64  # Force AMD64 for sqlcmd (emulation on ARM host)
+    platform: linux/amd64
     depends_on:
       - mssql
     environment:
-      MSSQL_SA_PASSWORD: ${MSSQL_PASSWORD}  # Match above
-      MSSQL_DB: ${MSSQL_DB}  # Your target DB name
-      BACKUP_FILE: /backups/backup.bak  # Path to your .bak
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+      MSSQL_DB: ${MSSQL_DB}
+      BACKUP_FILE: ${BACKUP_FILE}
+      LOGICAL_DATA_FILE: ${LOGICAL_DATA_FILE}
+      LOGICAL_LOG_FILE: ${LOGICAL_LOG_FILE}
     command: >
-      sh -c "sleep 30 && /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P $$MSSQL_SA_PASSWORD -Q 'RESTORE DATABASE $$MSSQL_DB FROM DISK=\"$$BACKUP_FILE\" WITH MOVE \"logical_data_file\" TO \"/var/opt/mssql/data/$$MSSQL_DB.mdf\", MOVE \"logical_log_file\" TO \"/var/opt/mssql/data/$$MSSQL_DB.ldf\", REPLACE;'"
-    # Note: Replace "logical_data_file" and "logical_log_file" with your .bak's actual logical names (get via FILELISTONLY query below)
+      sh -c "sleep 30 && /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P $$MSSQL_SA_PASSWORD -Q 'RESTORE DATABASE $$MSSQL_DB FROM DISK=\"$$BACKUP_FILE\" WITH MOVE \"$$LOGICAL_DATA_FILE\" TO \"/var/opt/mssql/data/$$MSSQL_DB.mdf\", MOVE \"$$LOGICAL_LOG_FILE\" TO \"/var/opt/mssql/data/$$MSSQL_DB.ldf\", REPLACE;'"
 
   agent-app:
     build: .
     container_name: agent-app
     depends_on:
       - ollama
-      - mssql  # Wait for DB
+      - mssql
     environment:
       - OLLAMA_HOST=http://ollama:11434
       - MSSQL_HOST=mssql
-      - MSSQL_USER=readonly_user
-      - MSSQL_PASSWORD=${MSSQL_PASSWORD}
+      - MSSQL_USER=${MSSQL_READONLY_USER}
+      - MSSQL_PASSWORD=${MSSQL_READONLY_PASSWORD}
       - MSSQL_DB=${MSSQL_DB}
     ports:
       - "8501:8501"
