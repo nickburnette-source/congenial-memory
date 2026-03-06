@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    volumes:
+      - ollama_models:/root/.ollama
+    ports:
+      - "11434:11434"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: mssql
+    environment:
+      ACCEPT_EULA: Y
+      SA_PASSWORD: YourStrongSaPass123  # Change this!
+      MSSQL_PID: Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql
+      - ./backups:/backups:ro  # Read-only mount for .bak
+    entrypoint: ["/bin/bash", "-c", "sleep 10 && /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P '$$SA_PASSWORD' -Q \"RESTORE DATABASE your_db FROM DISK='/backups/backup.bak' WITH MOVE 'your_db' TO '/var/opt/mssql/data/your_db.mdf', MOVE 'your_db_log' TO '/var/opt/mssql/data/your_db_log.ldf', REPLACE;\" && /opt/mssql/bin/sqlservr"]
+    # Note: Sleep gives time for server to start; adjust .bak filename/path as needed
+
+  agent-app:
+    build: .
+    container_name: agent-app
+    depends_on:
+      - ollama
+      - mssql
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - MSSQL_HOST=mssql
+      - MSSQL_USER=readonly_user  # Create this user post-restore if needed
+      - MSSQL_PASSWORD=YourReadonlyPass123
+      - MSSQL_DB=your_db
+    ports:
+      - "8501:8501"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+
+volumes:
+  ollama_models:
+  mssql_data:
