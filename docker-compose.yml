@@ -14,24 +14,30 @@ services:
               capabilities: [gpu]
 
   mssql:
-    image: mcr.microsoft.com/azure-sql-edge:1.0.7
-    platform: linux/arm64/v8  # Native ARM64
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64  # Emulation for stability on ARM64
     container_name: mssql
     environment:
-      ACCEPT_EULA: 1
+      ACCEPT_EULA: Y
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
-      MSSQL_PID: Developer
+      MSSQL_PID: ${MSSQL_PID:-Developer}
     ports:
       - "1433:1433"
     volumes:
       - mssql_data:/var/opt/mssql
-      - /home/blakecburnette/Desktop/waterbot/congenial-memory/backups:/backups:ro
+      - /home/<your-username>/Desktop/waterbot/congenial-memory/backups:/backups:ro  # Absolute path; replace <your-username>
+    healthcheck:
+      test: ["/opt/mssql-tools/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "${MSSQL_SA_PASSWORD}", "-Q", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
-  init-db:  # One-time restore (emulated AMD64)
+  init-db:  # One-time restore (emulated)
     image: mcr.microsoft.com/mssql-tools:latest
     platform: linux/amd64
     depends_on:
-      - mssql
+      mssql:
+        condition: service_healthy
     environment:
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
       MSSQL_DB: ${MSSQL_DB}
@@ -39,14 +45,16 @@ services:
       LOGICAL_DATA_FILE: ${LOGICAL_DATA_FILE}
       LOGICAL_LOG_FILE: ${LOGICAL_LOG_FILE}
     command: >
-      sh -c "sleep 30 && /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P $$MSSQL_SA_PASSWORD -Q 'RESTORE DATABASE $$MSSQL_DB FROM DISK=\"$$BACKUP_FILE\" WITH MOVE \"$$LOGICAL_DATA_FILE\" TO \"/var/opt/mssql/data/$$MSSQL_DB.mdf\", MOVE \"$$LOGICAL_LOG_FILE\" TO \"/var/opt/mssql/data/$$MSSQL_DB.ldf\", REPLACE;'"
+      sh -c "sleep 60 && /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P $$MSSQL_SA_PASSWORD -Q 'RESTORE DATABASE $$MSSQL_DB FROM DISK=\"$$BACKUP_FILE\" WITH MOVE \"$$LOGICAL_DATA_FILE\" TO \"/var/opt/mssql/data/$$MSSQL_DB.mdf\", MOVE \"$$LOGICAL_LOG_FILE\" TO \"/var/opt/mssql/data/$$MSSQL_DB.ldf\", REPLACE;'"
 
   agent-app:
     build: .
     container_name: agent-app
     depends_on:
-      - ollama
-      - mssql
+      mssql:
+        condition: service_healthy
+      ollama:
+        condition: service_started
     environment:
       - OLLAMA_HOST=http://ollama:11434
       - MSSQL_HOST=mssql
