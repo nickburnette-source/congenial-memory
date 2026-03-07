@@ -35,7 +35,7 @@ services:
       retries: 10
 
   init-db:  # One-time restore (emulated)
-    image: mcr.microsoft.com/mssql/tools:latest
+    image: mcr.microsoft.com/mssql-tools:latest
     platform: linux/amd64
     depends_on:
       mssql:
