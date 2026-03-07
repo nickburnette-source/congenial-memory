@@ -14,9 +14,9 @@ services:
               capabilities: [gpu]
 
   mssql:
-    image: mcr.microsoft.com/mssql/server:2019-CU28-ubuntu-20.04
+    image: mcr.microsoft.com/mssql/server:2019-CU18-ubuntu-20.04
     platform: linux/amd64  # Emulation for stability on ARM64
-    privileged: true  # Enables sysctl in container namespace
+    privileged: true  # Enables full kernel access for emulation
     container_name: mssql
     environment:
       ACCEPT_EULA: Y
@@ -27,8 +27,6 @@ services:
     volumes:
       - mssql_data:/var/opt/mssql
       - /home/<your-username>/Desktop/waterbot/congenial-memory/backups:/backups:ro  # Absolute path; replace <your-username>
-    sysctls:
-      - vm.legacy_va_layout=1  # Fixes VA mapping error in emulation
     healthcheck:
       test: [ "CMD", "/opt/mssql-tools/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "$$MSSQL_SA_PASSWORD", "-Q", "SELECT 1" ]
       interval: 10s
@@ -38,6 +36,7 @@ services:
   init-db:  # One-time restore (emulated)
     image: mcr.microsoft.com/mssql-tools:latest
     platform: linux/amd64
+    privileged: true  # Add for safety
     depends_on:
       mssql:
         condition: service_healthy
