@@ -14,7 +14,7 @@ services:
               capabilities: [gpu]
 
   mssql:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    image: mcr.microsoft.com/mssql/server:2019-CU28-ubuntu-20.04
     platform: linux/amd64  # Emulation for stability on ARM64
     container_name: mssql
     environment:
@@ -26,14 +26,16 @@ services:
     volumes:
       - mssql_data:/var/opt/mssql
       - /home/<your-username>/Desktop/waterbot/congenial-memory/backups:/backups:ro  # Absolute path; replace <your-username>
+    sysctls:
+      - vm.legacy_va_layout=1  # Fixes VA mapping error in emulation
     healthcheck:
-      test: [ "CMD", "/opt/mssql-tools/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "${MSSQL_SA_PASSWORD}", "-Q", "SELECT 1" ]  # Explicit CMD mode as array
+      test: [ "CMD", "/opt/mssql-tools/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "$$MSSQL_SA_PASSWORD", "-Q", "SELECT 1" ]
       interval: 10s
       timeout: 5s
       retries: 10
 
   init-db:  # One-time restore (emulated)
-    image: mcr.microsoft.com/mssql-tools:latest
+    image: mcr.microsoft.com/mssql/tools:2019-latest
     platform: linux/amd64
     depends_on:
       mssql:
