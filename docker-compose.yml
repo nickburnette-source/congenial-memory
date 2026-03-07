@@ -16,6 +16,7 @@ services:
   mssql:
     image: mcr.microsoft.com/mssql/server:2019-CU28-ubuntu-20.04
     platform: linux/amd64  # Emulation for stability on ARM64
+    privileged: true  # Enables sysctl in container namespace
     container_name: mssql
     environment:
       ACCEPT_EULA: Y
