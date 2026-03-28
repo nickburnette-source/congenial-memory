@@ -26,7 +26,7 @@ class WorkerAgent:
                 task = self.task_queue.get(timeout=1)
                 # Specialized LLM call with role
                 response = ollama.chat(
-                    model=st.session_state.get("MODEL_NAME", "llama3.2"),  # from env
+                    model=st.session_state.get("MODEL_NAME", "llama3.2:1b"),  # from env
                     messages=[
                         {"role": "system", "content": f"You are an expert {self.role}. Be concise, accurate, and actionable."},
                         {"role": "user", "content": task}

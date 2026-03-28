@@ -34,7 +34,7 @@ class Supervisor:
             del self.agents[agent_id]
             self.progress.append({"message": f"🗑️ Destroyed Agent {agent_id}"})
 
-    def run_task(self, user_task: str, model_name: str = "llama3.2"):
+    def run_task(self, user_task: str, model_name: str = "llama3.2:1b"):
         """Main supervisor loop. model_name is passed from main thread to avoid session_state issues."""
         self.progress.append({"message": f"📥 Received task: {user_task[:100]}..."})
         self.task_id = log_task(user_task)

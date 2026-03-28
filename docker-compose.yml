@@ -1,17 +1,38 @@
 version: '3.8'
 
 services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:  # or use runtime: nvidia on older compose
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # Alternative if above doesn't work: uncomment the line below and comment the deploy block
+    # runtime: nvidia
+    restart: unless-stopped
+
   app:
     build: .
     ports:
       - "8501:8501"
     environment:
-      - OLLAMA_HOST=http://host.docker.internal:11434
-      - MODEL_NAME=llama3.2          # Change to whatever model you have pulled in host Ollama
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - OLLAMA_HOST=http://ollama:11434   # Now points to the ollama service (much more reliable)
+      - MODEL_NAME=llama3.2:1b            # Start with tiny model for fast testing on DGX Spark
+    depends_on:
+      - ollama
     volumes:
       - ./app:/app
-      - ./data:/app/data             # Persist SQLite DB + any agent outputs
+      - ./data:/app/data
     stdin_open: true
     tty: true
+
+volumes:
+  ollama_data:

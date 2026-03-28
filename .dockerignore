@@ -1,0 +1,42 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Python cache/junk
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Data & runtime artifacts (important!)
+data/
+*.db
+*.sqlite3
+
+# Logs and temp
+*.log
+logs/
+tmp/
+
+# Editor/IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Docker itself
+Dockerfile*
+.dockerignore
+docker-compose.yml
+
+# Any large unused stuff
+node_modules/
+*.egg-info/
