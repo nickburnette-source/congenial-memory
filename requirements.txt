@@ -1,5 +1,5 @@
 streamlit
-ollama
+requests
 sqlalchemy
 pandas
 python-dotenv
