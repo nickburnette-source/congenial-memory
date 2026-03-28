@@ -8,24 +8,20 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    deploy:  # or use runtime: nvidia on older compose
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    # Alternative if above doesn't work: uncomment the line below and comment the deploy block
-    # runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    runtime: nvidia          # DGX Spark friendly (no deploy block)
     restart: unless-stopped
+    stdin_open: true
+    tty: true
 
   app:
     build: .
     ports:
       - "8501:8501"
     environment:
-      - OLLAMA_HOST=http://ollama:11434   # Now points to the ollama service (much more reliable)
-      - MODEL_NAME=llama3.2:1b            # Start with tiny model for fast testing on DGX Spark
+      - OLLAMA_HOST=http://ollama:11434
+      - MODEL_NAME=llama3.2:1b     # tiny & fast for testing on DGX Spark
     depends_on:
       - ollama
     volumes:
