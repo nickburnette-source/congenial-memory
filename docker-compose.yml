@@ -1,77 +1,41 @@
-services:
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    volumes:
-      - ollama_models:/root/.ollama
-    ports:
-      - "11434:11434"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              capabilities: [gpu]
+version: '3.8'
 
+services:
   mssql:
-    image: mcr.microsoft.com/mssql/server:2019-CU18-ubuntu-20.04
-    platform: linux/amd64  # Emulation for stability on ARM64
-    privileged: true  # Enables full kernel access for emulation
-    container_name: mssql
+    image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
       ACCEPT_EULA: Y
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
-      MSSQL_PID: ${MSSQL_PID:-Developer}
+      MSSQL_PID: Express
     ports:
       - "1433:1433"
     volumes:
       - mssql_data:/var/opt/mssql
-      - /home/<your-username>/Desktop/waterbot/congenial-memory/backups:/backups:ro  # Absolute path; replace <your-username>
     healthcheck:
-      test: [ "CMD", "/opt/mssql-tools/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "$$MSSQL_SA_PASSWORD", "-Q", "SELECT 1" ]
+      test: ["CMD", "/opt/mssql-tools/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "${MSSQL_SA_PASSWORD}", "-Q", "SELECT 1"]
       interval: 10s
-      timeout: 5s
-      retries: 10
+      retries: 5
 
-  init-db:  # One-time restore (emulated)
-    image: mcr.microsoft.com/mssql-tools:latest
-    platform: linux/amd64
-    privileged: true  # Add for safety
-    depends_on:
-      mssql:
-        condition: service_healthy
-    environment:
-      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
-      MSSQL_DB: ${MSSQL_DB}
-      BACKUP_FILE: ${BACKUP_FILE}
-      LOGICAL_DATA_FILE: ${LOGICAL_DATA_FILE}
-      LOGICAL_LOG_FILE: ${LOGICAL_LOG_FILE}
-    command: >
-      sh -c "sleep 60 && /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P $$MSSQL_SA_PASSWORD -Q 'RESTORE DATABASE $$MSSQL_DB FROM DISK=\"$$BACKUP_FILE\" WITH MOVE \"$$LOGICAL_DATA_FILE\" TO \"/var/opt/mssql/data/$$MSSQL_DB.mdf\", MOVE \"$$LOGICAL_LOG_FILE\" TO \"/var/opt/mssql/data/$$MSSQL_DB.ldf\", REPLACE;'"
-
-  agent-app:
+  app:
     build: .
-    container_name: agent-app
-    depends_on:
-      mssql:
-        condition: service_healthy
-      ollama:
-        condition: service_started
-    environment:
-      - OLLAMA_HOST=http://ollama:11434
-      - MSSQL_HOST=mssql
-      - MSSQL_USER=${MSSQL_READONLY_USER}
-      - MSSQL_PASSWORD=${MSSQL_READONLY_PASSWORD}
-      - MSSQL_DB=${MSSQL_DB}
     ports:
       - "8501:8501"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              capabilities: [gpu]
+    environment:
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      - MSSQL_SERVER=mssql
+      - MSSQL_USER=sa
+      - MSSQL_PASSWORD=${MSSQL_SA_PASSWORD}
+      - MSSQL_DATABASE=master
+      - MODEL_NAME=llama3.2  # Change to your pulled model
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      mssql:
+        condition: service_healthy
+    volumes:
+      - ./app:/app
+    stdin_open: true
+    tty: true
 
 volumes:
-  ollama_models:
   mssql_data:
