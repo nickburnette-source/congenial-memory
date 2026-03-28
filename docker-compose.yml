@@ -15,27 +15,3 @@ services:
       - ./data:/app/data             # Persist SQLite DB + any agent outputs
     stdin_open: true
     tty: true
-
-  app:
-    build: .
-    ports:
-      - "8501:8501"
-    environment:
-      - OLLAMA_HOST=http://host.docker.internal:11434
-      - MSSQL_SERVER=mssql
-      - MSSQL_USER=sa
-      - MSSQL_PASSWORD=${MSSQL_SA_PASSWORD}
-      - MSSQL_DATABASE=master
-      - MODEL_NAME=llama3.2  # Change to your pulled model
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      mssql:
-        condition: service_healthy
-    volumes:
-      - ./app:/app
-    stdin_open: true
-    tty: true
-
-volumes:
-  mssql_data:
