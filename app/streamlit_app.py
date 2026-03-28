@@ -72,4 +72,4 @@ if st.session_state.active_task:
 
 # Footer info
 st.divider()
-st.caption("🛠️ Architecture: Supervisor decomposes → creates/destroys agents → agents report via queue → UI polls live. MSSQL ready for persistence (see README).")
+st.caption("🛠️ Architecture: Supervisor decomposes → creates/destroys agents → agents report via queue → UI polls live.")
