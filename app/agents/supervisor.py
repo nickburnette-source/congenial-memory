@@ -43,11 +43,11 @@ class Supervisor:
         self.task_id = log_task(user_task)
         self.shared_context = {"original_task": user_task, "agent_reports": []}
 
-        # STRICT planning prompt for tiny 1B model
+        # Strict planning prompt for tiny 1B model
         print("[DEBUG] Starting supervisor planning...")
         plan_prompt = f"""
-You are the Supervisor on DGX Spark. You MUST break this task into 2-5 parallel subtasks.
-Return ONLY a single valid JSON array. No extra text. No markdown. No explanations.
+You are the Supervisor on DGX Spark. Break this task into 2-5 parallel subtasks.
+Return ONLY a valid JSON array. No extra text, no explanations, no markdown.
 Exact format:
 [{{"role": "role_name", "subtask": "clear short description"}}]
 
@@ -57,29 +57,36 @@ Task: {user_task}
         try:
             resp = self.client.chat(messages=[{"role": "user", "content": plan_prompt}])
             plan_text = resp["message"]["content"].strip()
-            print(f"[DEBUG] Raw plan response:\n{plan_text[:500]}...")
+            print(f"[DEBUG] Raw plan response:\n{plan_text[:800]}...")
 
-            # Robust JSON repair for small-model quirks
-            # 1. Remove markdown code blocks
+            # === AGGRESSIVE JSON REPAIR FOR WEAK 1B MODEL ===
+            # Remove markdown
             if "```" in plan_text:
                 plan_text = plan_text.split("```")[1].split("```")[0].strip()
-            # 2. Extract the first JSON array if multiple objects were returned
-            array_match = re.search(r'\[\s*\{.*\}\s*\]', plan_text, re.DOTALL)
-            if array_match:
-                plan_text = array_match.group(0)
-            # 3. Try to parse
-            subtasks = json.loads(plan_text)
+
+            # Find ALL JSON objects and wrap them in an array
+            objects = re.findall(r'\{[^}]+\}', plan_text)
+            if objects:
+                # Rebuild as a proper array
+                array_str = "[" + ",".join(objects) + "]"
+                subtasks = json.loads(array_str)
+                print(f"[DEBUG] Rebuilt {len(subtasks)} subtasks from raw objects")
+            else:
+                # Fallback: try direct parse
+                subtasks = json.loads(plan_text)
+
             if not isinstance(subtasks, list):
                 raise ValueError("Not a list")
             print(f"[DEBUG] Planning succeeded: {len(subtasks)} subtasks")
+
         except Exception as e:
-            print(f"[DEBUG] Planning failed ({e}) — fallback to single general-agent")
+            print(f"[DEBUG] Planning failed ({e}) — using fallback single agent")
             self.progress.append({"message": f"⚠️ Planning failed ({e}), using fallback"})
             subtasks = [{"role": "general-agent", "subtask": user_task}]
 
         self.progress.append({"message": f"📋 Decomposed into {len(subtasks)} subtasks"})
 
-        # Assign work (Supervisor controls context)
+        # Assign work (Supervisor controls shared context)
         assigned = {}
         for sub in subtasks:
             role = sub.get("role", "general-agent")
@@ -94,7 +101,7 @@ Task: {user_task}
 
         print(f"[DEBUG] Assigned {len(assigned)} subtasks — fleet is now active and running")
 
-        # Collect reports and update shared context
+        # Collect reports + update shared context
         done_count = 0
         while done_count < len(assigned):
             try:
