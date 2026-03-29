@@ -13,7 +13,7 @@ class Supervisor:
         self.progress = []
         self.task_id = None
         self.client = OllamaClient()
-        self.shared_context = {}  # Supervisor-controlled context for all agents
+        self.shared_context = {}  # Supervisor-controlled context for the entire fleet
 
     def create_agent(self, role: str) -> int:
         agent_id = self.next_agent_id
@@ -37,11 +37,13 @@ class Supervisor:
             self.progress.append({"message": f"🗑️ Destroyed Agent {agent_id}"})
 
     def run_task(self, user_task: str):
+        print("[DEBUG] run_task STARTED")  # will appear in docker logs
         self.progress.append({"message": f"📥 Received task: {user_task[:100]}..."})
         self.task_id = log_task(user_task)
-        self.shared_context = {"original_task": user_task, "agent_reports": []}  # Supervisor starts controlling context
+        self.shared_context = {"original_task": user_task, "agent_reports": []}
 
-        # Planning step
+        # Planning step with debug
+        print("[DEBUG] Starting supervisor planning...")
         plan_prompt = f"""
 You are the Supervisor on DGX Spark. Break this task into 2-5 parallel subtasks.
 Return ONLY valid JSON array: [{"role": "role_name", "subtask": "description"}]
@@ -53,24 +55,28 @@ Task: {user_task}
             if "```" in plan_text:
                 plan_text = plan_text.split("```")[1].strip()
             subtasks = json.loads(plan_text)
-        except Exception:
+            print(f"[DEBUG] Planning succeeded: {len(subtasks)} subtasks")
+        except Exception as e:
+            print(f"[DEBUG] Planning failed ({e}) — using fallback single agent")
+            self.progress.append({"message": f"⚠️ Planning failed ({e}), using fallback"})
             subtasks = [{"role": "general-agent", "subtask": user_task}]
 
         self.progress.append({"message": f"📋 Decomposed into {len(subtasks)} subtasks"})
 
-        # Assign work with shared context injected
+        # Assign work with shared context
         assigned = {}
         for sub in subtasks:
             role = sub.get("role", "general-agent")
             subtask = sub.get("subtask", sub.get("description", ""))
-            # Supervisor injects full context into every agent
-            full_subtask = f"Context: {self.shared_context['original_task']}\n\nSubtask: {subtask}"
+            full_subtask = f"Context (managed by Supervisor):\n{self.shared_context['original_task']}\n\nSubtask: {subtask}"
             
             existing_id = next((aid for aid, a in self.agents.items() if a["role"] == role), None)
             agent_id = existing_id if existing_id is not None else self.create_agent(role)
             self.agents[agent_id]["status"] = "working"
             self.agents[agent_id]["task_queue"].put(full_subtask)
             assigned[agent_id] = subtask
+
+        print(f"[DEBUG] Assigned {len(assigned)} subtasks to agents")
 
         # Collect reports and update shared context
         done_count = 0
@@ -84,28 +90,29 @@ Task: {user_task}
                     if aid in self.agents:
                         self.agents[aid]["status"] = "idle"
                     log_agent_report(self.task_id, aid, report.get("role", ""), report.get("result", ""))
-                    # Supervisor updates shared context automatically
                     self.shared_context["agent_reports"].append(report)
             except queue.Empty:
                 continue
 
-        # Final synthesis (simple & reliable - no more 404)
+        # Final synthesis
         self.progress.append({"message": "🔄 Supervisor synthesizing final answer..."})
         agent_summaries = "\n".join(
             f"Agent {p.get('agent_id')} ({p.get('role')}): {p.get('result', '')[:800]}"
             for p in self.progress if isinstance(p, dict) and p.get("status") == "done"
         )
         final_result = f"""
-Final Answer (supervisor-controlled synthesis):
+Final Answer (Supervisor-controlled synthesis):
 
 {agent_summaries}
 
-(Supervisor has full context and can reuse agents for follow-up tasks.)
+(Supervisor has full shared context and can reuse agents for follow-up tasks.)
 """
         self.progress.append({"message": "✅ Task complete", "result": final_result})
 
-        # Light cleanup (supervisor decides when to destroy agents)
+        # Light cleanup
         if len(self.agents) > 5:
             for aid in list(self.agents.keys())[:2]:
                 if self.agents[aid]["status"] == "idle":
                     self.destroy_agent(aid)
+
+        print("[DEBUG] run_task FINISHED")
