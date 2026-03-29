@@ -37,21 +37,25 @@ class Supervisor:
             self.progress.append({"message": f"🗑️ Destroyed Agent {agent_id}"})
 
     def run_task(self, user_task: str):
-        print("[DEBUG] run_task STARTED")  # will appear in docker logs
+        print("[DEBUG] run_task STARTED")
         self.progress.append({"message": f"📥 Received task: {user_task[:100]}..."})
         self.task_id = log_task(user_task)
         self.shared_context = {"original_task": user_task, "agent_reports": []}
 
-        # Planning step with debug
+        # Planning step - FIXED f-string escaping
         print("[DEBUG] Starting supervisor planning...")
         plan_prompt = f"""
 You are the Supervisor on DGX Spark. Break this task into 2-5 parallel subtasks.
-Return ONLY valid JSON array: [{"role": "role_name", "subtask": "description"}]
+For each subtask give a clear ROLE and short description.
+Return ONLY valid JSON array (no extra text, no markdown):
+[{{"role": "role_name", "subtask": "description"}}]
+
 Task: {user_task}
 """
         try:
             resp = self.client.chat(messages=[{"role": "user", "content": plan_prompt}])
             plan_text = resp["message"]["content"].strip()
+            print(f"[DEBUG] Raw plan response: {plan_text[:300]}...")
             if "```" in plan_text:
                 plan_text = plan_text.split("```")[1].strip()
             subtasks = json.loads(plan_text)
@@ -63,7 +67,7 @@ Task: {user_task}
 
         self.progress.append({"message": f"📋 Decomposed into {len(subtasks)} subtasks"})
 
-        # Assign work with shared context
+        # Assign work with shared context (Supervisor-controlled)
         assigned = {}
         for sub in subtasks:
             role = sub.get("role", "general-agent")
@@ -76,7 +80,7 @@ Task: {user_task}
             self.agents[agent_id]["task_queue"].put(full_subtask)
             assigned[agent_id] = subtask
 
-        print(f"[DEBUG] Assigned {len(assigned)} subtasks to agents")
+        print(f"[DEBUG] Assigned {len(assigned)} subtasks to agents — fleet is now active")
 
         # Collect reports and update shared context
         done_count = 0
@@ -115,4 +119,4 @@ Final Answer (Supervisor-controlled synthesis):
                 if self.agents[aid]["status"] == "idle":
                     self.destroy_agent(aid)
 
-        print("[DEBUG] run_task FINISHED")
+        print("[DEBUG] run_task FINISHED successfully")
