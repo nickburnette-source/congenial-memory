@@ -1,6 +1,7 @@
 import json
 import queue
 import time
+import re
 from .agent import WorkerAgent
 from .db import log_task, log_agent_report
 from .ollama_client import OllamaClient
@@ -42,32 +43,43 @@ class Supervisor:
         self.task_id = log_task(user_task)
         self.shared_context = {"original_task": user_task, "agent_reports": []}
 
-        # Planning step - FIXED f-string escaping
+        # STRICT planning prompt for tiny 1B model
         print("[DEBUG] Starting supervisor planning...")
         plan_prompt = f"""
-You are the Supervisor on DGX Spark. Break this task into 2-5 parallel subtasks.
-For each subtask give a clear ROLE and short description.
-Return ONLY valid JSON array (no extra text, no markdown):
-[{{"role": "role_name", "subtask": "description"}}]
+You are the Supervisor on DGX Spark. You MUST break this task into 2-5 parallel subtasks.
+Return ONLY a single valid JSON array. No extra text. No markdown. No explanations.
+Exact format:
+[{{"role": "role_name", "subtask": "clear short description"}}]
 
 Task: {user_task}
 """
+
         try:
             resp = self.client.chat(messages=[{"role": "user", "content": plan_prompt}])
             plan_text = resp["message"]["content"].strip()
-            print(f"[DEBUG] Raw plan response: {plan_text[:300]}...")
+            print(f"[DEBUG] Raw plan response:\n{plan_text[:500]}...")
+
+            # Robust JSON repair for small-model quirks
+            # 1. Remove markdown code blocks
             if "```" in plan_text:
-                plan_text = plan_text.split("```")[1].strip()
+                plan_text = plan_text.split("```")[1].split("```")[0].strip()
+            # 2. Extract the first JSON array if multiple objects were returned
+            array_match = re.search(r'\[\s*\{.*\}\s*\]', plan_text, re.DOTALL)
+            if array_match:
+                plan_text = array_match.group(0)
+            # 3. Try to parse
             subtasks = json.loads(plan_text)
+            if not isinstance(subtasks, list):
+                raise ValueError("Not a list")
             print(f"[DEBUG] Planning succeeded: {len(subtasks)} subtasks")
         except Exception as e:
-            print(f"[DEBUG] Planning failed ({e}) — using fallback single agent")
+            print(f"[DEBUG] Planning failed ({e}) — fallback to single general-agent")
             self.progress.append({"message": f"⚠️ Planning failed ({e}), using fallback"})
             subtasks = [{"role": "general-agent", "subtask": user_task}]
 
         self.progress.append({"message": f"📋 Decomposed into {len(subtasks)} subtasks"})
 
-        # Assign work with shared context (Supervisor-controlled)
+        # Assign work (Supervisor controls context)
         assigned = {}
         for sub in subtasks:
             role = sub.get("role", "general-agent")
@@ -80,7 +92,7 @@ Task: {user_task}
             self.agents[agent_id]["task_queue"].put(full_subtask)
             assigned[agent_id] = subtask
 
-        print(f"[DEBUG] Assigned {len(assigned)} subtasks to agents — fleet is now active")
+        print(f"[DEBUG] Assigned {len(assigned)} subtasks — fleet is now active and running")
 
         # Collect reports and update shared context
         done_count = 0
