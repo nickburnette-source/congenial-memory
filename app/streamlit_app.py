@@ -8,7 +8,6 @@ st.set_page_config(page_title="DGX Spark Multi-Agent Supervisor", layout="wide")
 st.title("🧠 DGX Spark Multi-Agent System")
 st.caption("Supervisor controls fleet + shared context • GPU Ollama • SQLite persistence")
 
-# Session state
 if "supervisor" not in st.session_state:
     report_queue = queue.Queue()
     st.session_state.supervisor = Supervisor(report_queue)
@@ -25,11 +24,11 @@ if sup.agents:
         status = "🟢 working" if agent["status"] == "working" else "⚪ idle"
         st.sidebar.write(f"Agent {aid} ({agent['role']}) → {status}")
 else:
-    st.sidebar.info("No agents yet — supervisor will create them automatically")
+    st.sidebar.info("Waiting for Supervisor to create agents...")
 
-# Main task input
+# Task input
 task = st.text_area("Enter task for the Supervisor:", 
-                    placeholder="Example: Research the best way to fine-tune a small LLM on DGX Spark and write a simple training script.",
+                    placeholder="Example: Write a short poem about DGX Spark and blockchain.",
                     height=120)
 
 if st.button("🚀 Start Supervisor Task", type="primary", use_container_width=True):
@@ -39,53 +38,50 @@ if st.button("🚀 Start Supervisor Task", type="primary", use_container_width=T
         
         def run_supervisor():
             try:
-                sup.run_task(task)   # ← fixed: no model_name anymore
-                print("[DEBUG] run_task completed successfully")
+                sup.run_task(task)
             except Exception as e:
-                error_msg = f"💥 Supervisor crashed immediately: {e}"
-                print(error_msg)
-                sup.progress.append({"message": error_msg})
+                sup.progress.append({"message": f"💥 Supervisor error: {e}"})
         
         st.session_state.running_thread = threading.Thread(target=run_supervisor, daemon=True)
         st.session_state.running_thread.start()
-        st.success("Task submitted to Supervisor. Live updates below...")
+        st.success("Task submitted — Supervisor + fleet are now working...")
 
-# Live progress area
+# Live progress (always visible while task active)
 if st.session_state.active_task:
     st.subheader("📋 Live Progress & Agent Reports")
     progress_container = st.container()
-    
-    col_refresh, col_stop = st.columns([1,1])
-    if col_refresh.button("🔄 Manual Refresh", use_container_width=True):
-        st.rerun()
-    if col_stop.button("⏹️ Stop Task", type="secondary", use_container_width=True):
-        st.session_state.active_task = None
+
+    if st.button("🔄 Force Refresh Now", use_container_width=True):
         st.rerun()
 
-    # Poll while thread alive
+    # Poll aggressively while agents are running
     while st.session_state.running_thread and st.session_state.running_thread.is_alive():
         with progress_container:
-            for msg in st.session_state.progress[-15:]:
-                if isinstance(msg, dict):
-                    if "agent_id" in msg:
-                        st.write(f"**Agent {msg['agent_id']}** ({msg.get('role','')}) → {msg.get('result','')[:400]}...")
-                    else:
-                        st.info(msg.get("message", str(msg)))
-        time.sleep(1.5)
+            # Show any "working" messages prominently
+            working_msgs = [msg for msg in st.session_state.progress[-20:] 
+                           if isinstance(msg, dict) and msg.get("status") == "working"]
+            if working_msgs:
+                st.warning("**Agents are actively working on DGX Spark** (inference can take 30-90s each)")
+                for msg in working_msgs:
+                    st.write(f"**Agent {msg['agent_id']}** ({msg.get('role','')}) → {msg.get('result','')}")
+            else:
+                for msg in st.session_state.progress[-15:]:
+                    if isinstance(msg, dict):
+                        if "agent_id" in msg:
+                            st.write(f"**Agent {msg['agent_id']}** ({msg.get('role','')}) → {msg.get('result','')[:500]}...")
+                        else:
+                            st.info(msg.get("message", str(msg)))
+        time.sleep(2)   # poll every 2 seconds
         st.rerun()
 
-    # Final display
+    # Final results when done
     if not (st.session_state.running_thread and st.session_state.running_thread.is_alive()):
         st.success("✅ Supervisor task finished!")
         final_msg = next((msg for msg in reversed(st.session_state.progress) if isinstance(msg, dict) and "result" in msg), None)
         if final_msg:
             st.markdown("### 🏁 Final Answer")
             st.write(final_msg["result"])
-        else:
-            st.info("No final answer generated — raw progress below:")
-            for msg in st.session_state.progress[-10:]:
-                st.write(msg)
         st.session_state.active_task = None
 
 st.divider()
-st.caption("Architecture: Supervisor decomposes → controls shared context → creates/destroys agents at will → agents report via queue → SQLite logging")
+st.caption("Supervisor → decomposes task → controls shared context → creates/destroys agents at will → agents report via queue")
