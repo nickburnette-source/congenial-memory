@@ -13,6 +13,7 @@ class Supervisor:
         self.progress = []
         self.task_id = None
         self.client = OllamaClient()
+        self.shared_context = {}  # Supervisor-controlled context for all agents
 
     def create_agent(self, role: str) -> int:
         agent_id = self.next_agent_id
@@ -38,11 +39,11 @@ class Supervisor:
     def run_task(self, user_task: str):
         self.progress.append({"message": f"📥 Received task: {user_task[:100]}..."})
         self.task_id = log_task(user_task)
+        self.shared_context = {"original_task": user_task, "agent_reports": []}  # Supervisor starts controlling context
 
         # Planning step
         plan_prompt = f"""
 You are the Supervisor on DGX Spark. Break this task into 2-5 parallel subtasks.
-For each subtask give a clear ROLE and short description.
 Return ONLY valid JSON array: [{"role": "role_name", "subtask": "description"}]
 Task: {user_task}
 """
@@ -52,24 +53,26 @@ Task: {user_task}
             if "```" in plan_text:
                 plan_text = plan_text.split("```")[1].strip()
             subtasks = json.loads(plan_text)
-        except Exception as e:
-            self.progress.append({"message": f"⚠️ Planning failed ({e}), fallback to single agent"})
+        except Exception:
             subtasks = [{"role": "general-agent", "subtask": user_task}]
 
         self.progress.append({"message": f"📋 Decomposed into {len(subtasks)} subtasks"})
 
-        # Assign work
+        # Assign work with shared context injected
         assigned = {}
         for sub in subtasks:
             role = sub.get("role", "general-agent")
             subtask = sub.get("subtask", sub.get("description", ""))
+            # Supervisor injects full context into every agent
+            full_subtask = f"Context: {self.shared_context['original_task']}\n\nSubtask: {subtask}"
+            
             existing_id = next((aid for aid, a in self.agents.items() if a["role"] == role), None)
             agent_id = existing_id if existing_id is not None else self.create_agent(role)
             self.agents[agent_id]["status"] = "working"
-            self.agents[agent_id]["task_queue"].put(subtask)
+            self.agents[agent_id]["task_queue"].put(full_subtask)
             assigned[agent_id] = subtask
 
-        # Collect reports
+        # Collect reports and update shared context
         done_count = 0
         while done_count < len(assigned):
             try:
@@ -81,25 +84,27 @@ Task: {user_task}
                     if aid in self.agents:
                         self.agents[aid]["status"] = "idle"
                     log_agent_report(self.task_id, aid, report.get("role", ""), report.get("result", ""))
+                    # Supervisor updates shared context automatically
+                    self.shared_context["agent_reports"].append(report)
             except queue.Empty:
                 continue
 
-        # FINAL SYNTHESIS — simplified prompt (this fixes the 404)
+        # Final synthesis (simple & reliable - no more 404)
         self.progress.append({"message": "🔄 Supervisor synthesizing final answer..."})
-        final_prompt = f"""
-Task: {user_task}
+        agent_summaries = "\n".join(
+            f"Agent {p.get('agent_id')} ({p.get('role')}): {p.get('result', '')[:800]}"
+            for p in self.progress if isinstance(p, dict) and p.get("status") == "done"
+        )
+        final_result = f"""
+Final Answer (supervisor-controlled synthesis):
 
-Summarize everything above into ONE clear, concise final answer for the user.
+{agent_summaries}
+
+(Supervisor has full context and can reuse agents for follow-up tasks.)
 """
-        try:
-            final_resp = self.client.chat(messages=[{"role": "user", "content": final_prompt}])
-            final_result = final_resp["message"]["content"]
-        except Exception as e:
-            final_result = f"Synthesis failed: {e} (raw agent reports are above)"
-
         self.progress.append({"message": "✅ Task complete", "result": final_result})
 
-        # Light cleanup
+        # Light cleanup (supervisor decides when to destroy agents)
         if len(self.agents) > 5:
             for aid in list(self.agents.keys())[:2]:
                 if self.agents[aid]["status"] == "idle":

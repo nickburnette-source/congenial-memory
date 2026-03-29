@@ -69,10 +69,17 @@ if st.session_state.active_task:
     # Show final results when done
     if not (st.session_state.running_thread and st.session_state.running_thread.is_alive()):
         st.success("✅ Supervisor task finished!")
-        for msg in st.session_state.progress:
-            if isinstance(msg, dict) and "result" in msg and "agent_id" not in msg:
-                st.markdown("### Final Answer")
-                st.write(msg["result"])
+        
+        # Always show the final result (more robust)
+        final_msg = next((msg for msg in reversed(st.session_state.progress) if isinstance(msg, dict) and "result" in msg), None)
+        if final_msg and "result" in final_msg:
+            st.markdown("### 🏁 Final Answer")
+            st.write(final_msg["result"])
+        else:
+            st.info("Raw progress (no synthesis result):")
+            for msg in st.session_state.progress[-10:]:
+                st.write(msg)
+        
         st.session_state.active_task = None
 
 st.divider()
